@@ -5,12 +5,13 @@ import json
 from typing import List
 from openai import AzureOpenAI
 import sys
+import csv
 
 # Azure OpenAI connection
 AIclient = AzureOpenAI(
     azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT"), 
     api_key = os.getenv("AZURE_OPENAI_KEY"),  
-    api_version = os.getenv("AZURE_OPENAI_API_VERSION")
+    api_version = os.getenv("AZURE_OPENAI_VERSION")
 )
 
 
@@ -59,7 +60,7 @@ def extract_email_signature (body: str) -> str:
                        --- EXAMPLE RESPONSE --- \
                         {\"Status\": \"Success\" \
                          \"Name\": \"Mary Jane\", \
-                         \"Job Title\": \"Accountant\", \
+                    7     \"Job Title\": \"Accountant\", \
                          \"Company\": \"Contoso\"} \
                       --- \
                       If you cannot find a signature, respond with the following JSON: \
@@ -87,7 +88,14 @@ def extract_email_signature (body: str) -> str:
 
     return completion.choices[0].message.content
 
-def process_data_extraction(domain_name: str):   
+def extract_first_last_name(email: str) -> str:
+    match = re.match(r'(\w+)\.(\w+)@', email)
+    if match:
+        return f"{match.group(1).capitalize()} {match.group(2).capitalize()}"
+    else:
+        return "N/A"
+
+def process_data_extraction(domain_name_list: list):   
     # Load the Outlook COM object
     Outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
 
@@ -114,11 +122,13 @@ def process_data_extraction(domain_name: str):
                 email_address = None
 
         # Combine sender and recipient addresses
-        all_addresses = email_address
+        if email_address:
+            email = email_address[0].lower()
 
-        if all_addresses:
+        if email:
             # Filter addresses based on specified domains
-            filtered_addresses = [address for address in all_addresses if domain_name.lower() in address.lower()]
+            #filtered_addresses = [address for address in all_addresses if domain_name.lower() in address.lower()]
+            filtered_addresses = [email for domain in domain_name_list if domain.lower() in email.lower()]
 
             # Add filtered addresses to the list only if filtered addresses are not empty
             if filtered_addresses:
@@ -136,7 +146,8 @@ def process_data_extraction(domain_name: str):
                             emails_and_sigs_dict[email] = email_sig
                             print(f"\r\nAdded email with signature: {email_sig['Email']}: {email_sig['Name']} - {email_sig['Job Title']} - {email_sig['Company']}")
                         else:
-                            emails_and_sigs_dict[email] = None
+                            email_sig["Name"] = extract_first_last_name(email)
+                            emails_and_sigs_dict[email] = email_sig
                             print(f"\r\nAdded email without signature: {email}")                       
 
         # Calculate the percentage completed
@@ -147,17 +158,40 @@ def process_data_extraction(domain_name: str):
 
     return emails_and_sigs_dict
 
+def write_to_csv(data: dict, csv_data: list):
+    for email, details in data.items():
+        if details is not None:
+            csv_data.append([email, details.get("Name"), details.get("Job Title"), details.get("Company")])
+        else:
+            csv_data.append([email, "N/A", "N/A", "N/A"])
+
+    with open(f"full_campaign.csv", "w", newline="") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["Email", "Name", "Job Title", "Company"])
+        writer.writerows(csv_data)
+
 # Main
 
 if len(sys.argv) > 1:
-    domain_name = sys.argv[1]
-    with open(f"{domain_name}.json", "w") as outfile:
-        result = process_data_extraction(domain_name)
-        json.dump(result, outfile)
-    print()
-    print(result)
+    csv_data = []
+    domain_name_list = []
+    with open(f"full_campaign.csv", "w", newline="") as csvfile:
+        csv_writer = csv.writer(csvfile)
+        csv_writer.writerow(["Email", "Name", "Job Title", "Company"])
+
+        for i in range(1, len(sys.argv)):
+            domain_name_list.append(sys.argv[i].lower())
+
+        with open(f"full_campaign.json", "w") as outfile:
+            result = process_data_extraction(domain_name_list)
+            json.dump(result, outfile)
+        print()
+        print(result)
+        write_to_csv(result, csv_data)
+
+
 else:
-    print("Usage: python extract-emails.py <domain_name>")
+    print("Usage: python extract-emails.py <domain_name1> <domain_name2> ... <domain_nameN")
     print("Example: python extract-emails.py @contoso.com")
     print("This will extract all email addresses from the Outlook inbox and save the results to a file called <domain_name>.json")
     print("Note: You must have Outlook installed and configured with an email account to use this script.")

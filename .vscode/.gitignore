@@ -1,0 +1,19 @@
+# Ignore Visual Studio Code settings
+.vscode/
+
+# Ignore compiled files
+*.pyc
+*.class
+
+# Ignore dependencies
+/node_modules
+/.venv
+
+# Ignore log files
+*.log
+
+# Ignore generated files
+/generated/
+
+# Ignore sensitive information
+secrets.txt
