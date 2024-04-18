@@ -95,6 +95,14 @@ def extract_first_last_name(email: str) -> str:
     else:
         return "N/A"
 
+# add a function to retrieve a list of files from the current folder
+def get_files_list():
+    files_list = []
+    for file in os.listdir():
+        if file.endswith(".json"):
+            files_list.append(file)
+    return files_list
+
 def process_data_extraction(domain_name_list: list):   
     # Load the Outlook COM object
     Outlook = win32com.client.Dispatch("Outlook.Application").GetNamespace("MAPI")
