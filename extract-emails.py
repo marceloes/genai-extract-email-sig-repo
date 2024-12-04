@@ -23,7 +23,7 @@ def extract_email_signature (body: str) -> str:
     # Extract email signature using OpenAI
 
     message_text = [{"role":"system",
-                     "content":"Extract Name, Job Title and Company from email signature in the email body. \
+                     "content":"Extract First Name, Last Name, Job Title and Company from email signature in the email body. \
                       Signatures are typically found at the end of the email body. \
                       In any JSON response, always use double quotes for properties and values. \
                        ---- EXAMPLE SIGNATURE ----- \
@@ -35,7 +35,8 @@ def extract_email_signature (body: str) -> str:
                        --- \
                        --- EXAMPLE RESPONSE --- \
                         {\"Status\": \"Success\" \
-                         \"Name\": \"John Doe\", \
+                         \"First Name\": \"John\", \
+                         \"Last Name\": \"Doe\", \
                          \"Job Title\": \"Senior Software Engineer\", \
                          \"Company\": \"Acme Corp\"} \
                       --- \
@@ -49,7 +50,8 @@ def extract_email_signature (body: str) -> str:
                        --- \
                        --- EXAMPLE RESPONSE --- \
                         {\"Status\": \"Success\" \
-                         \"Name\": \"John Doe\", \
+                         \"First Name\": \"John\", \
+                         \"Last Name\": \"Doe\", \
                          \"Job Title\": \"Senior Software Engineer\", \
                          \"Company\": \"Acme Corp\"} \
                       --- \
@@ -59,18 +61,36 @@ def extract_email_signature (body: str) -> str:
                        --- \
                        --- EXAMPLE RESPONSE --- \
                         {\"Status\": \"Success\" \
-                         \"Name\": \"Mary Jane\", \
-                    7     \"Job Title\": \"Accountant\", \
+                         \"First Name\": \"Mary\", \
+                         \"Last Name\": \"jane\", \
+                         \"Job Title\": \"Accountant\", \
                          \"Company\": \"Contoso\"} \
                       --- \
-                      If you cannot find a signature, respond with the following JSON: \
+                      If there's no signature then extract first name or last name then extract the first name and last name from the email address. For example: \                       ---- EXAMPLE EMAIL ADDRESS ----- \
+                       --- \
+                       --- EXAMPLE EMAIL ADDRESS --- \
+                       mary.jane@contoso.com \
+                       --- \
+                       --- EXAMPLE RESPONSE --- \
                         {\"Status\": \"No signature found\" \
-                         \"Name\": \" \", \
-                         \"Job Title\": \" \", \
-                         \"Company\": \" \"} \
-                      If you cannot find a name, job title or company, respond with the following JSON format, putting 'N/A' on any field that was not found, like in the example below where Job Title was not found but Name and Company were found: \
+                         \"First Name\": \"Mary\", \
+                         \"Last Name\": \"Jane\", \
+                         \"Job Title\": \"\", \
+                         \"Company\": \"Contoso\"} \
+                       --- EXAMPLE EMAIL ADDRESS --- \
+                       john.doe@blabller.net \
+                       --- \
+                       --- EXAMPLE RESPONSE --- \
+                        {\"Status\": \"No signature found\" \
+                         \"First Name\": \"John\", \
+                         \"Last Name\": \"Doe\", \
+                         \"Job Title\": \"\", \
+                         \"Company\": \"Blabller\"} \
+                        --- \
+                      If you cannot guess the first or last name, job title or company, respond with the following JSON format, putting 'N/A' on any field that was not found, like in the example below where Job Title was not found but Name and Company were found: \
                         {\"Status\": \"Partial Success\" \
-                         \"Name\": \"Marc Smith\", \
+                         \"First Name\": \"\", \
+                         \"Last Name\": \"\", \
                          \"Job Title': \"N/A\", \
                          \"Company': \"Contoso\"} \
                       --- EMAIL BODY ---- " + body + "--- END OF EMAIL BODY ---"}]
@@ -88,12 +108,12 @@ def extract_email_signature (body: str) -> str:
 
     return completion.choices[0].message.content
 
-def extract_first_last_name(email: str) -> str:
-    match = re.match(r'(\w+)\.(\w+)@', email)
+def extract_first_last_name_company(email: str) -> (str, str, str):
+    match = re.match(r'(\w+)\.(\w+)@([\w.]+)', email)
     if match:
-        return f"{match.group(1).capitalize()} {match.group(2).capitalize()}"
+        return match.group(1).capitalize(), match.group(2).capitalize(), match.group(3).split('.')[0].capitalize()
     else:
-        return "N/A"
+        return "N/A", "N/A", "N/A"
 
 # add a function to retrieve a list of files from the current folder
 def get_files_list():
@@ -151,12 +171,14 @@ def process_data_extraction(domain_name_list: list):
                         # Check if returned name is N/A in the name field
                         if (email_sig["Status"] == "Success" or email_sig["Status"] == "Partial Success"): # and email_sig["Name"] != "YOUR NAME":     <-- Add this in case you get a lot of your own signatures in the email
                             email_sig["Email"] = email
+                            if email_sig["First Name"] == "" or email_sig["Last Name"] == "":
+                                email_sig["First Name"], email_sig["Last Name"], email_sig['Company'] = extract_first_last_name_company(email)
                             emails_and_sigs_dict[email] = email_sig
-                            print(f"\r\nAdded email with signature: {email_sig['Email']}: {email_sig['Name']} - {email_sig['Job Title']} - {email_sig['Company']}")
+                            print(f"\r\nAdded email with signature: {email_sig['Email']}: {email_sig['First Name']} {email_sig['Last Name']} - {email_sig['Job Title']} - {email_sig['Company']}")
                         else:
-                            email_sig["Name"] = extract_first_last_name(email)
+                            email_sig["First Name"], email_sig["Last Name"], email_sig['Company'] = extract_first_last_name_company(email)
                             emails_and_sigs_dict[email] = email_sig
-                            print(f"\r\nAdded email without signature: {email}")                       
+                            print(f"\r\nAdded email without signature: {email}: {email_sig['First Name']} {email_sig['Last Name']} - {email_sig['Company']}")                       
 
         # Calculate the percentage completed
         percent_complete = (current_step / item_count) * 100
@@ -169,13 +191,13 @@ def process_data_extraction(domain_name_list: list):
 def write_to_csv(data: dict, csv_data: list):
     for email, details in data.items():
         if details is not None:
-            csv_data.append([email, details.get("Name"), details.get("Job Title"), details.get("Company")])
+            csv_data.append([email, details.get("First Name"), details.get("Last Name"), details.get("Job Title"), details.get("Company")])
         else:
             csv_data.append([email, "N/A", "N/A", "N/A"])
 
     with open(f"full_campaign.csv", "w", newline="") as csvfile:
         writer = csv.writer(csvfile)
-        writer.writerow(["Email", "Name", "Job Title", "Company"])
+        writer.writerow(["Email", "First Name", "Last Name", "Job Title", "Company"])
         writer.writerows(csv_data)
 
 # Main
@@ -185,7 +207,7 @@ if len(sys.argv) > 1:
     domain_name_list = []
     with open(f"full_campaign.csv", "w", newline="") as csvfile:
         csv_writer = csv.writer(csvfile)
-        csv_writer.writerow(["Email", "Name", "Job Title", "Company"])
+        csv_writer.writerow(["Email", "First Name", "Last Name", "Job Title", "Company"])
 
         for i in range(1, len(sys.argv)):
             domain_name_list.append(sys.argv[i].lower())
